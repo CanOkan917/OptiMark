@@ -50,12 +50,16 @@ It can automatically identify marked answers on multiple-choice sheets and gener
 optimark/
 │
 ├── main.py
-├── utils/
-│   ├── image_processing.py
-│   ├── contour_utils.py
-│   └── grading.py
+├── generator/
+│   ├── __init__.py
+│   ├── app.py
+│   ├── config.py
+│   ├── drawer.py
+│   ├── helpers.py
+│   ├── layout.py
+│   ├── sheet_generator.py
+│   └── template_exporter.py
 │
-├── samples/
 ├── requirements.txt
 └── README.md
 
