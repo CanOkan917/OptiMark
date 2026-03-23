@@ -1,3 +1,8 @@
+---
+
+# 📄 README.md
+
+```markdown
 # 🎯 OptiMark
 
 **OptiMark** is a computer vision-based Optical Mark Recognition (OMR) system that detects and evaluates bubble sheets using a camera or image input.
@@ -40,25 +45,89 @@ It can automatically identify marked answers on multiple-choice sheets and gener
 
 ## 📂 Project Structure
 
+```
 
 optimark/
 │
 ├── main.py
 ├── utils/
-│ ├── image_processing.py
-│ ├── contour_utils.py
-│ └── grading.py
+│   ├── image_processing.py
+│   ├── contour_utils.py
+│   └── grading.py
 │
 ├── samples/
 ├── requirements.txt
 └── README.md
 
+````
 
 ---
 
 ## ⚙️ Installation
 
 ```bash
-git clone https://github.com/canokan917/OptiMark.git
-cd OptiMark
+git clone https://github.com/yourusername/optimark.git
+cd optimark
 pip install -r requirements.txt
+````
+
+---
+
+## ▶️ Usage
+
+```bash
+python main.py
+```
+
+Or run with camera input:
+
+```bash
+python main.py --camera
+```
+
+---
+
+## 📸 Example
+
+| Input Sheet | Processed Output |
+| ----------- | ---------------- |
+| (image)     | (graded image)   |
+
+---
+
+## 📊 Example Output
+
+```
+Q1: A
+Q2: C
+Q3: B
+Score: 8/10
+```
+
+---
+
+## 🔥 Future Improvements
+
+* 📱 Mobile support
+* 🤖 AI-based mark detection (CNN)
+* 🌐 Web interface
+* 🧾 Multiple template support
+* ☁️ Cloud deployment
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to open issues or submit pull requests.
+
+---
+
+## 📄 License
+
+MIT License
+
+---
+
+## ⭐ Support
+
+If you like this project, give it a ⭐ on GitHub!
