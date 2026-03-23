@@ -1,8 +1,3 @@
----
-
-# 📄 README.md
-
-```markdown
 # 🎯 OptiMark
 
 **OptiMark** is a computer vision-based Optical Mark Recognition (OMR) system that detects and evaluates bubble sheets using a camera or image input.
