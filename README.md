@@ -59,6 +59,6 @@ optimark/
 ## ⚙️ Installation
 
 ```bash
-git clone https://github.com/canokan917/optimark.git
-cd optimark
+git clone https://github.com/canokan917/OptiMark.git
+cd OptiMark
 pip install -r requirements.txt
