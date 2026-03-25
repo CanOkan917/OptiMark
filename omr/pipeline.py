@@ -89,9 +89,11 @@ class OMRPipeline:
                 a4_plane_path = writer.save_image(plane_overlay, "a4_plane_overlay.png")
             reading_binary = marker_steps["08_closed"]
             question_results = self.answer_reader.read_questions(reading_binary, aligned_template)
+            student_id_results = self.answer_reader.read_student_id(reading_binary, aligned_template)
             answers_payload = {
                 "question_results": question_results,
                 "question_count": len(question_results),
+                "student_id": student_id_results,
                 "alignment": aligned_template.get("alignment"),
             }
             answers_path = writer.save_answers(answers_payload)
@@ -99,6 +101,7 @@ class OMRPipeline:
                 color_image=marker_color_image,
                 template=aligned_template,
                 question_results=question_results,
+                student_id_results=student_id_results,
             )
             writer.save_image(debug_overlay, "answer_debug_overlay.png")
 

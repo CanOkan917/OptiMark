@@ -32,6 +32,7 @@ class BubbleSheetGenerator:
         marker_positions = self.layout.get_marker_positions(self.width, self.height)
 
         self.drawer.draw_corner_markers(marker_positions)
+        # self.drawer.draw_printable_area_box(self.width, self.height)
         self.drawer.draw_header(self.width, self.height)
         self.draw_questions()
         self.drawer.draw_footer()

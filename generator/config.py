@@ -15,6 +15,7 @@ class SheetConfig:
 
     margin_x: int = 25
     margin_y: int = 25
+    printer_hard_margin_mm: float = 6.35
 
     header_height: int = 90
     footer_height: int = 40
