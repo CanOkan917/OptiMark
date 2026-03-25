@@ -1,3 +1,10 @@
 reportlab>=4.2,<5
 opencv-python>=4.10,<5
 numpy>=1.26,<3
+
+fastapi
+sqlalchemy>=2.0,<3
+psycopg[binary]>=3.1,<4
+python-jose[cryptography]>=3.3,<4
+email-validator>=2.0,<3
+python-dotenv>=1.0,<2
