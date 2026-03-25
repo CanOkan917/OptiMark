@@ -53,3 +53,8 @@ class OutputWriter:
         path = self.output_dir / filename
         cv2.imwrite(str(path), image)
         return path
+
+    def save_answers(self, answers: dict) -> Path:
+        path = self.output_dir / "answers.json"
+        path.write_text(json.dumps(answers, ensure_ascii=False, indent=2), encoding="utf-8")
+        return path

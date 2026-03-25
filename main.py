@@ -44,6 +44,8 @@ def main() -> None:
         print(f"Template used: {result.template_path}")
     if result.a4_plane_path:
         print(f"A4 plane overlay: {result.a4_plane_path}")
+    if result.answers_path:
+        print(f"Answers json: {result.answers_path}")
 
 
 if __name__ == "__main__":

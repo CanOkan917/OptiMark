@@ -3,11 +3,18 @@ from pathlib import Path
 
 import cv2
 
+from omr.answer_reader import AnswerReader
 from omr.marker_detector import detect
 from omr.output_writer import OutputWriter
 from omr.preprocessing import ImagePreprocessor
 from omr.sheet_detector import find_sheet_corners, warp_from_corners
-from omr.template import resolve_template_path, load_template, project_a4_plane_on_image
+from omr.template import (
+    resolve_template_path,
+    load_template,
+    normalize_template_to_image_coords,
+    align_template_to_markers,
+    project_a4_plane_on_image,
+)
 
 
 @dataclass
@@ -21,11 +28,13 @@ class PipelineResult:
     sheet_contour_path: Path | None = None
     a4_plane_path: Path | None = None
     template_path: Path | None = None
+    answers_path: Path | None = None
 
 
 class OMRPipeline:
     def __init__(self):
         self.preprocessor = ImagePreprocessor()
+        self.answer_reader = AnswerReader()
 
     def run(self, image_path: Path, output_dir: Path, template_json: str | None = None) -> PipelineResult:
         image = cv2.imread(str(image_path))
@@ -66,8 +75,11 @@ class OMRPipeline:
 
         template_path = resolve_template_path(template_json, output_dir)
         a4_plane_path = None
+        answers_path = None
         if template_path is not None and len(markers) == 4:
-            template = load_template(template_path)
+            template_raw = load_template(template_path)
+            template = normalize_template_to_image_coords(template_raw)
+            aligned_template = align_template_to_markers(template, markers)
             plane_overlay = project_a4_plane_on_image(
                 image=marker_color_image,
                 markers=markers,
@@ -75,6 +87,20 @@ class OMRPipeline:
             )
             if plane_overlay is not None:
                 a4_plane_path = writer.save_image(plane_overlay, "a4_plane_overlay.png")
+            reading_binary = marker_steps["08_closed"]
+            question_results = self.answer_reader.read_questions(reading_binary, aligned_template)
+            answers_payload = {
+                "question_results": question_results,
+                "question_count": len(question_results),
+                "alignment": aligned_template.get("alignment"),
+            }
+            answers_path = writer.save_answers(answers_payload)
+            debug_overlay = self.answer_reader.build_question_debug_overlay(
+                color_image=marker_color_image,
+                template=aligned_template,
+                question_results=question_results,
+            )
+            writer.save_image(debug_overlay, "answer_debug_overlay.png")
 
         return PipelineResult(
             processing_mode=processing_mode,
@@ -86,4 +112,5 @@ class OMRPipeline:
             sheet_contour_path=sheet_contour_path,
             a4_plane_path=a4_plane_path,
             template_path=template_path,
+            answers_path=answers_path,
         )
