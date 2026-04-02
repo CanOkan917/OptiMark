@@ -1,278 +1,370 @@
-import { useMemo, useState } from "react"
-import { useSearchParams } from "react-router-dom"
-import { useAcademic } from "../academic/AcademicContext"
-import type { Exam, ExamQuestion, OptionLabel } from "../academic/types"
-
-const optionLabels: OptionLabel[] = ["A", "B", "C", "D", "E"]
-
-interface DraftQuestion extends ExamQuestion {}
-
-function createDraftQuestion(index: number): DraftQuestion {
-  return {
-    id: `draft-q-${index}-${crypto.randomUUID()}`,
-    text: "",
-    correctOption: "A",
-  }
-}
-
-function BubbleSheetPreview({ exam }: { exam: Exam }) {
-  const visibleOptions = optionLabels.slice(0, exam.optionCount)
-
-  return (
-    <section className="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-      <h2 className="text-xl font-black text-slate-900">Bubble Sheet Preview</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        {exam.title} | {exam.questions.length} questions | {exam.optionCount} options
-      </p>
-
-      <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-2">
-        {exam.questions.map((question, index) => (
-          <div key={question.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2">
-            <span className="text-sm font-semibold text-slate-700">Q{index + 1}</span>
-            <div className="flex gap-2">
-              {visibleOptions.map((option) => (
-                <div
-                  key={`${question.id}-${option}`}
-                  className={`flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold ${
-                    option === question.correctOption ? "border-cyan-500 bg-cyan-100 text-cyan-800" : "border-slate-300 text-slate-500"
-                  }`}
-                >
-                  {option}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
+import {useEffect, useMemo, useState} from "react"
+import {useSearchParams, useNavigate} from "react-router-dom"
+import {useAcademic} from "../academic/AcademicContext"
+import {
+    Search,
+    Plus,
+    Calendar,
+    Clock,
+    FileText,
+    Settings2,
+    ChevronRight,
+    Printer,
+    ScanLine,
+    X,
+    Check
+} from "lucide-react"
+import {motion, AnimatePresence} from "framer-motion"
+import {ApiError} from "../api/client"
 
 export function ExamManagementPage() {
-  const { courses, createExam, getCourseById, getExamsByCourse } = useAcademic()
-  const [searchParams] = useSearchParams()
-  const initialCourseId = searchParams.get("courseId") ?? ""
-  const [courseId, setCourseId] = useState(initialCourseId)
-  const [title, setTitle] = useState("")
-  const [examDate, setExamDate] = useState("")
-  const [durationMinutes, setDurationMinutes] = useState(60)
-  const [optionCount, setOptionCount] = useState<4 | 5>(4)
-  const [questions, setQuestions] = useState<DraftQuestion[]>([createDraftQuestion(1)])
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  const [previewExam, setPreviewExam] = useState<Exam | null>(null)
+    const navigate = useNavigate()
+    const {courses, createExam, exams, refreshCourses, refreshExams} = useAcademic()
 
-  const selectedCourse = getCourseById(courseId)
-  const courseExams = useMemo(() => (courseId ? getExamsByCourse(courseId) : []), [courseId, getExamsByCourse])
+    const [searchParams, setSearchParams] = useSearchParams()
+    const initialCourseId = searchParams.get("courseId") ?? "all"
 
-  const updateQuestion = (questionId: string, field: keyof DraftQuestion, value: string) => {
-    setQuestions((current) =>
-      current.map((question) => {
-        if (question.id !== questionId) return question
-        if (field === "correctOption") return { ...question, correctOption: value as OptionLabel }
-        return { ...question, [field]: value }
-      }),
+    // UI States
+    const [selectedCourseId, setSelectedCourseId] = useState<string>(initialCourseId)
+    const [searchTerm, setSearchTerm] = useState("")
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+
+    // New Exam Form States
+    const [newExamCourseId, setNewExamCourseId] = useState("")
+    const [title, setTitle] = useState("")
+    const [examDate, setExamDate] = useState(new Date().toISOString().slice(0, 10))
+    const [durationMinutes, setDurationMinutes] = useState(60)
+    const [optionCount, setOptionCount] = useState<4 | 5>(4)
+    const [scoringFormula, setScoringFormula] = useState<"standard" | "penalty">("standard")
+
+    // Feedback
+    const [error, setError] = useState<string | null>(null)
+    const [success, setSuccess] = useState<string | null>(null)
+
+    const displayExams = useMemo(
+        () => [...exams].sort((a, b) => new Date(b.examDate).getTime() - new Date(a.examDate).getTime()),
+        [exams],
     )
-  }
 
-  const addQuestion = () => {
-    setQuestions((current) => [...current, createDraftQuestion(current.length + 1)])
-  }
+    useEffect(() => {
+        void refreshCourses()
+    }, [refreshCourses])
 
-  const removeQuestion = (questionId: string) => {
-    setQuestions((current) => current.filter((question) => question.id !== questionId))
-  }
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            void refreshExams(selectedCourseId, searchTerm)
+        }, 250)
+        return () => window.clearTimeout(timer)
+    }, [refreshExams, searchTerm, selectedCourseId])
 
-  const resetExamForm = () => {
-    setTitle("")
-    setExamDate("")
-    setDurationMinutes(60)
-    setOptionCount(4)
-    setQuestions([createDraftQuestion(1)])
-  }
-
-  const submitExam = () => {
-    if (!courseId) {
-      setError("Select a course first.")
-      return
-    }
-    if (!title.trim()) {
-      setError("Exam title is required.")
-      return
-    }
-    if (questions.length === 0) {
-      setError("Add at least one question.")
-      return
-    }
-    if (questions.some((question) => !question.text.trim())) {
-      setError("Every question must have text.")
-      return
+    const openCreateModal = () => {
+        setNewExamCourseId(selectedCourseId !== "all" ? selectedCourseId : "")
+        setIsCreateModalOpen(true)
     }
 
-    const exam = createExam({
-      courseId,
-      title: title.trim(),
-      examDate: examDate || new Date().toISOString().slice(0, 10),
-      durationMinutes,
-      optionCount,
-      questions: questions.map((question) => ({
-        id: question.id,
-        text: question.text.trim(),
-        correctOption: question.correctOption,
-      })),
-    })
+    const handleCreateExam = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setError(null)
 
-    setPreviewExam(exam)
-    setSuccess("Exam created and bubble sheet generated.")
-    setError(null)
-    resetExamForm()
-  }
+        if (!newExamCourseId) {
+            setError("Please select a course for this exam.")
+            return
+        }
+        if (!title.trim()) {
+            setError("Exam title is required.")
+            return
+        }
 
-  return (
-    <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-      <section className="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-        <h1 className="text-2xl font-black tracking-tight text-slate-950">Exam Management</h1>
-        <p className="mt-1 text-sm text-slate-500">Build exams question by question, then generate a bubble sheet preview.</p>
+        try {
+            await createExam({
+                courseId: newExamCourseId,
+                title: title.trim(),
+                examDate,
+                durationMinutes,
+                optionCount,
+                scoringFormula,
+                questions: [],
+            })
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Course</label>
-            <select
-              value={courseId}
-              onChange={(event) => setCourseId(event.target.value)}
-              className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-            >
-              <option value="">Select course</option>
-              {courses.map((course) => (
-                <option key={course.id} value={course.id}>
-                  {course.code} - {course.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Exam Title</label>
-            <input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-              placeholder="Midterm 1"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Exam Date</label>
-            <input
-              type="date"
-              value={examDate}
-              onChange={(event) => setExamDate(event.target.value)}
-              className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Duration (min)</label>
-              <input
-                type="number"
-                min={10}
-                value={durationMinutes}
-                onChange={(event) => setDurationMinutes(Number(event.target.value))}
-                className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Options</label>
-              <select
-                value={optionCount}
-                onChange={(event) => setOptionCount(Number(event.target.value) as 4 | 5)}
-                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-              >
-                <option value={4}>4 (A-D)</option>
-                <option value={5}>5 (A-E)</option>
-              </select>
-            </div>
-          </div>
-        </div>
+            setSuccess(`"${title}" drafted successfully.`)
+            setIsCreateModalOpen(false)
 
-        <div className="mt-6 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-black text-slate-900">Questions</h2>
-            <button type="button" onClick={addQuestion} className="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800">
-              Add Question
-            </button>
-          </div>
+            setTitle("")
+            setDurationMinutes(60)
+            setOptionCount(4)
+            setScoringFormula("standard")
 
-          {questions.map((question, index) => (
-            <div key={question.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-800">Question {index + 1}</p>
+            setTimeout(() => setSuccess(null), 3000)
+        } catch (err) {
+            if (err instanceof ApiError) {
+                setError(err.message)
+                return
+            }
+            setError("Exam could not be created.")
+        }
+    }
+
+    return (
+        <div className="mx-auto max-w-6xl space-y-6">
+
+            <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+                <div>
+                    <h1 className="text-3xl font-black tracking-tight text-slate-950">Exams & Assessments</h1>
+                    <p className="mt-1 text-sm font-medium text-slate-500">
+                        Create exams, configure grading rubrics, and print optical mark forms.
+                    </p>
+                </div>
                 <button
-                  type="button"
-                  onClick={() => removeQuestion(question.id)}
-                  disabled={questions.length === 1}
-                  className="text-xs font-semibold text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
+                    onClick={openCreateModal}
+                    className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-cyan-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-cyan-500/20 transition-all hover:bg-cyan-700 active:scale-95"
                 >
-                  Remove
+                    <Plus className="h-4 w-4"/>
+                    Draft New Exam
                 </button>
-              </div>
-
-              <textarea
-                value={question.text}
-                onChange={(event) => updateQuestion(question.id, "text", event.target.value)}
-                className="min-h-20 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                placeholder={`Write question ${index + 1}...`}
-              />
-
-              <div className="mt-2">
-                <label className="mb-1 block text-xs font-medium text-slate-600">Correct Option</label>
-                <select
-                  value={question.correctOption}
-                  onChange={(event) => updateQuestion(question.id, "correctOption", event.target.value)}
-                  className="h-9 rounded-lg border border-slate-300 bg-white px-3 text-sm outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                >
-                  {optionLabels.slice(0, optionCount).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
-          ))}
+
+            <div
+                className="flex flex-col gap-4 rounded-3xl border border-slate-200/60 bg-white p-4 shadow-[0_4px_20px_rgba(15,23,42,0.03)] sm:flex-row sm:items-center">
+                <div className="flex-shrink-0">
+                    <select
+                        value={selectedCourseId}
+                        onChange={(e) => {
+                            setSelectedCourseId(e.target.value)
+                            setSearchParams(e.target.value !== "all" ? {courseId: e.target.value} : {})
+                        }}
+                        className="h-10 cursor-pointer rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700 outline-none transition-colors hover:border-slate-300 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                    >
+                        <option value="all">All Courses</option>
+                        {courses.map(c => <option key={c.id} value={c.id}>{c.code} - {c.name}</option>)}
+                    </select>
+                </div>
+
+                <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"/>
+                    <input
+                        type="text"
+                        placeholder="Search by exam title..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="h-10 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm outline-none transition-all focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                    />
+                </div>
+            </div>
+
+            <AnimatePresence>
+                {success && (
+                    <motion.div initial={{opacity: 0, y: -10}} animate={{opacity: 1, y: 0}}
+                                exit={{opacity: 0, height: 0}}
+                                className="rounded-xl bg-emerald-50 px-4 py-3 border border-emerald-100 flex items-center gap-2 text-sm font-bold text-emerald-700">
+                        <Check className="h-4 w-4"/> {success}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+                {displayExams.length === 0 ? (
+                    <div
+                        className="col-span-full py-12 text-center rounded-3xl border border-dashed border-slate-300 bg-slate-50/50">
+                        <FileText className="mx-auto h-10 w-10 text-slate-300 mb-3"/>
+                        <h3 className="text-sm font-bold text-slate-900">No exams found</h3>
+                        <p className="text-xs text-slate-500 mt-1">Adjust filters or create a new draft.</p>
+                    </div>
+                ) : (
+                    displayExams.map((exam) => {
+                        const course = courses.find(c => c.id === exam.courseId)
+                        const isDraft = exam.questions.length === 0
+
+                        return (
+                            <motion.div
+                                layout
+                                initial={{opacity: 0, scale: 0.95}}
+                                animate={{opacity: 1, scale: 1}}
+                                key={exam.id}
+                                className="group relative flex flex-col justify-between overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-[0_8px_30px_rgba(15,23,42,0.04)] transition-all hover:-translate-y-1 hover:shadow-[0_12px_40px_rgba(15,23,42,0.08)] hover:border-cyan-200/60"
+                            >
+                                <div className="p-5 flex-1">
+                                    <div className="mb-3 flex items-start justify-between">
+                                        <span
+                                            className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
+                                            {course?.code || "Unknown Course"}
+                                        </span>
+                                        {isDraft && (
+                                            <span
+                                                className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                                                Draft
+                                            </span>
+                                        )}
+                                    </div>
+                                    <h3 className="text-lg font-black text-slate-900 leading-tight mb-4">{exam.title}</h3>
+
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                                            <Calendar className="h-4 w-4 text-slate-400"/>
+                                            <span className="font-medium">{exam.examDate}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                                            <Clock className="h-4 w-4 text-slate-400"/>
+                                            <span className="font-medium">{exam.durationMinutes} mins</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-sm text-slate-600">
+                                            <Settings2 className="h-4 w-4 text-slate-400"/>
+                                            <span
+                                                className="font-medium">{exam.optionCount} Options ({exam.questions.length} Qs)</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div
+                                    className="border-t border-slate-100 bg-slate-50/50 p-3 flex items-center justify-between">
+                                    <div className="flex gap-1">
+                                        <button
+                                            title="Print Bubble Sheets"
+                                            className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-cyan-600 hover:shadow-sm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                            disabled={isDraft}
+                                        >
+                                            <Printer className="h-4 w-4"/>
+                                        </button>
+                                        <button
+                                            title="Scan Papers"
+                                            onClick={() => navigate(`/dashboard/scans?examId=${exam.id}`)}
+                                            className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-cyan-600 hover:shadow-sm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                            disabled={isDraft}
+                                        >
+                                            <ScanLine className="h-4 w-4"/>
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={() => navigate(`/dashboard/exams/${exam.id}/builder`)}
+                                        className="inline-flex items-center gap-1 text-sm font-bold text-cyan-600 hover:text-cyan-700 cursor-pointer"
+                                    >
+                                        {isDraft ? "Build Questions" : "Edit Details"}
+                                        <ChevronRight className="h-4 w-4"/>
+                                    </button>
+                                </div>
+                            </motion.div>
+                        )
+                    })
+                )}
+            </div>
+
+            <AnimatePresence>
+                {isCreateModalOpen && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+                        <motion.div
+                            initial={{opacity: 0, scale: 0.95, y: 20}}
+                            animate={{opacity: 1, scale: 1, y: 0}}
+                            exit={{opacity: 0, scale: 0.95, y: 20}}
+                            className="w-full max-w-lg overflow-hidden rounded-[24px] bg-white shadow-2xl"
+                        >
+                            <div
+                                className="flex items-center justify-between border-b border-slate-100 bg-slate-50/50 px-6 py-4">
+                                <h2 className="text-lg font-black text-slate-900">Exam Configuration</h2>
+                                <button onClick={() => setIsCreateModalOpen(false)}
+                                        className="rounded-full p-1.5 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors">
+                                    <X className="h-5 w-5"/>
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleCreateExam} className="p-6 space-y-5">
+                                <div>
+                                    <label
+                                        className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Target
+                                        Course</label>
+                                    <select
+                                        value={newExamCourseId}
+                                        onChange={(e) => setNewExamCourseId(e.target.value)}
+                                        className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                                    >
+                                        <option value="" disabled>Select a course...</option>
+                                        {courses.map(c => <option key={c.id} value={c.id}>{c.code} - {c.name}</option>)}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label
+                                        className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Exam
+                                        Title</label>
+                                    <input
+                                        value={title}
+                                        onChange={(e) => setTitle(e.target.value)}
+                                        placeholder="e.g. Fall Midterm 2026"
+                                        className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                                    />
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label
+                                            className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Date</label>
+                                        <input
+                                            type="date"
+                                            value={examDate}
+                                            onChange={(e) => setExamDate(e.target.value)}
+                                            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label
+                                            className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Duration
+                                            (Min)</label>
+                                        <input
+                                            type="number"
+                                            min={15}
+                                            value={durationMinutes}
+                                            onChange={(e) => setDurationMinutes(Number(e.target.value))}
+                                            className="h-11 w-full rounded-xl border border-slate-300 px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label
+                                            className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Sheet
+                                            Format</label>
+                                        <select
+                                            value={optionCount}
+                                            onChange={(e) => setOptionCount(Number(e.target.value) as 4 | 5)}
+                                            className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                                        >
+                                            <option value={4}>4 Options (A-D)</option>
+                                            <option value={5}>5 Options (A-E)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label
+                                            className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">Scoring
+                                            Formula</label>
+                                        <select
+                                            value={scoringFormula}
+                                            onChange={(e) => setScoringFormula(e.target.value as any)}
+                                            className="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-medium outline-none focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/20"
+                                        >
+                                            <option value="standard">Standard (No Penalty)</option>
+                                            <option value="penalty">4 Wrongs = 1 Right</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                {error && <p className="text-sm font-medium text-rose-600 flex items-center gap-1.5"><X
+                                    className="h-4 w-4"/> {error}</p>}
+
+                                <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100">
+                                    <button type="button" onClick={() => setIsCreateModalOpen(false)}
+                                            className="rounded-xl px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer">
+                                        Cancel
+                                    </button>
+                                    <button type="submit"
+                                            className="rounded-xl bg-cyan-600 px-6 py-2.5 text-sm font-bold text-white hover:bg-cyan-700 shadow-md shadow-cyan-500/20 transition-all cursor-pointer">
+                                        Create Draft
+                                    </button>
+                                </div>
+                            </form>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
         </div>
-
-        {error ? <p className="mt-4 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
-        {success ? <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{success}</p> : null}
-
-        <button onClick={submitExam} className="mt-5 h-11 rounded-xl bg-cyan-600 px-4 text-sm font-semibold text-white hover:bg-cyan-700">
-          Create Exam and Generate Bubble Sheet
-        </button>
-      </section>
-
-      <section className="space-y-6">
-        <article className="rounded-3xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_30px_rgba(15,23,42,0.04)]">
-          <h2 className="text-lg font-black text-slate-900">Course Exams</h2>
-          <p className="mt-1 text-sm text-slate-500">Selected course: {selectedCourse ? `${selectedCourse.code} - ${selectedCourse.name}` : "None"}</p>
-
-          <div className="mt-4 space-y-2">
-            {courseExams.length === 0 ? <p className="text-sm text-slate-500">No exams found for this course.</p> : null}
-            {courseExams.map((exam) => (
-              <button
-                key={exam.id}
-                type="button"
-                onClick={() => setPreviewExam(exam)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left hover:border-cyan-300 hover:bg-cyan-50"
-              >
-                <p className="text-sm font-semibold text-slate-900">{exam.title}</p>
-                <p className="text-xs text-slate-500">
-                  {exam.questions.length} questions | {exam.examDate}
-                </p>
-              </button>
-            ))}
-          </div>
-        </article>
-
-        {previewExam ? <BubbleSheetPreview exam={previewExam} /> : null}
-      </section>
-    </div>
-  )
+    )
 }

@@ -21,6 +21,8 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     migrate_users_table()
+    migrate_exams_table()
+    migrate_exam_questions_table()
 
 
 def migrate_users_table() -> None:
@@ -45,6 +47,52 @@ def migrate_users_table() -> None:
 
         for _, index_sql in expected_indexes.items():
             conn.execute(text(index_sql))
+
+
+def migrate_exams_table() -> None:
+    expected_columns = {
+        "builder_payload_json": "TEXT",
+        "publish_status": "VARCHAR(16) NOT NULL DEFAULT 'draft'",
+        "published_at": "TIMESTAMPTZ",
+        "assigned_student_groups_json": "TEXT NOT NULL DEFAULT '[]'",
+        "bubble_sheet_config_json": "TEXT NOT NULL DEFAULT '{}'",
+    }
+
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        table_names = inspector.get_table_names()
+        if "exams" not in table_names:
+            return
+
+        existing_columns = {col["name"] for col in inspector.get_columns("exams")}
+        for column_name, ddl in expected_columns.items():
+            if column_name not in existing_columns:
+                conn.execute(text(f"ALTER TABLE exams ADD COLUMN {column_name} {ddl}"))
+
+
+def migrate_exam_questions_table() -> None:
+    expected_columns = {
+        "options_json": "TEXT NOT NULL DEFAULT '[]'",
+        "correct_option_id": "VARCHAR(64)",
+        "points": "INTEGER NOT NULL DEFAULT 10",
+        "difficulty": "VARCHAR(16) NOT NULL DEFAULT 'Medium'",
+        "bloom_level": "VARCHAR(32) NOT NULL DEFAULT 'Understand'",
+        "tags_json": "TEXT NOT NULL DEFAULT '[]'",
+    }
+
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        table_names = inspector.get_table_names()
+        if "exam_questions" not in table_names:
+            return
+
+        existing_columns = {col["name"] for col in inspector.get_columns("exam_questions")}
+        for column_name, ddl in expected_columns.items():
+            if column_name not in existing_columns:
+                conn.execute(text(f"ALTER TABLE exam_questions ADD COLUMN {column_name} {ddl}"))
+
+        # Builder autosave can persist incomplete questions, so correct_option must be nullable.
+        conn.execute(text("ALTER TABLE exam_questions ALTER COLUMN correct_option DROP NOT NULL"))
 
 
 def get_db():
