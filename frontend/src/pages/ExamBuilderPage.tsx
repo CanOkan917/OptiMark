@@ -136,6 +136,10 @@ export function ExamBuilderPage() {
                 setMissingAnswerQuestionIds([])
             } catch (error) {
                 if (cancelled) return
+                if (error instanceof ApiError && error.status === 409 && examId) {
+                    navigate(`/dashboard/exams/${examId}`, {replace: true})
+                    return
+                }
                 const message = error instanceof ApiError
                     ? error.message
                     : (error instanceof Error ? error.message : "Failed to load exam builder data.")
@@ -152,7 +156,7 @@ export function ExamBuilderPage() {
         return () => {
             cancelled = true
         }
-    }, [examId, selectedAcademicYear])
+    }, [examId, navigate, selectedAcademicYear])
 
     useEffect(() => {
         if (!unsavedChanges) return

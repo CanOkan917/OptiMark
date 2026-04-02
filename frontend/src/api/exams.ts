@@ -40,6 +40,51 @@ export interface ApiExamBuilder {
   updated_at: string
 }
 
+export interface ApiExamSheetGeneration {
+  id: string
+  exam_id: string
+  academic_year: string
+  question_count: number
+  option_count: 4 | 5
+  created_at: string
+  download_url: string
+}
+
+export interface ExamSheetGeneration {
+  id: string
+  examId: string
+  academicYear: string
+  questionCount: number
+  optionCount: 4 | 5
+  createdAt: string
+  downloadUrl: string
+}
+
+export interface ExamOverviewSheetTemplate {
+  id: string
+  examId: string
+  questionCount: number
+  optionCount: 4 | 5
+  createdAt: string
+  downloadUrl: string
+}
+
+export interface ExamOverviewMetrics {
+  assignedStudentCount: number
+  submittedAnswerCount: number
+  gradedSubmissionCount: number
+  pendingGradingCount: number
+  absentCount: number
+  averageScore: number | null
+  participationRate: number
+}
+
+export interface ExamOverview {
+  exam: Exam
+  sheetTemplates: ExamOverviewSheetTemplate[]
+  metrics: ExamOverviewMetrics
+}
+
 interface UpsertExamBuilderQuestionPayload {
   question_order: number
   question: ApiExamBuilderQuestion
@@ -72,6 +117,31 @@ interface ApiExam {
   created_at: string
 }
 
+interface ApiExamSheetTemplate {
+  id: string
+  exam_id: string
+  question_count: number
+  option_count: 4 | 5
+  created_at: string
+  download_url: string
+}
+
+interface ApiExamOverviewMetrics {
+  assigned_student_count: number
+  submitted_answer_count: number
+  graded_submission_count: number
+  pending_grading_count: number
+  absent_count: number
+  average_score: number | null
+  participation_rate: number
+}
+
+interface ApiExamOverview {
+  exam: ApiExam
+  sheet_templates: ApiExamSheetTemplate[]
+  metrics: ApiExamOverviewMetrics
+}
+
 interface ExamsResponse {
   items: ApiExam[]
 }
@@ -96,6 +166,15 @@ interface UpdateExamPayload {
   assigned_student_groups?: string[]
   bubble_sheet_config?: Record<string, string | number | boolean>
   publish_status?: "draft" | "published"
+}
+
+interface PublishExamPayload {
+  title: string
+  exam_date: string
+  duration_minutes: number
+  scoring_formula: ScoringFormula
+  assigned_student_groups: string[]
+  bubble_sheet_config: Record<string, string | number | boolean>
 }
 
 interface UpdateQuestionsPayload {
@@ -135,6 +214,45 @@ function toApiQuestion(question: ExamQuestion): ApiExamQuestion {
     id: question.id,
     text: question.text,
     correct_option: question.correctOption,
+  }
+}
+
+function mapExamSheetGeneration(payload: ApiExamSheetGeneration): ExamSheetGeneration {
+  return {
+    id: payload.id,
+    examId: payload.exam_id,
+    academicYear: payload.academic_year,
+    questionCount: payload.question_count,
+    optionCount: payload.option_count,
+    createdAt: payload.created_at,
+    downloadUrl: payload.download_url,
+  }
+}
+
+function mapExamSheetTemplate(payload: ApiExamSheetTemplate): ExamOverviewSheetTemplate {
+  return {
+    id: payload.id,
+    examId: payload.exam_id,
+    questionCount: payload.question_count,
+    optionCount: payload.option_count,
+    createdAt: payload.created_at,
+    downloadUrl: payload.download_url,
+  }
+}
+
+function mapExamOverview(payload: ApiExamOverview): ExamOverview {
+  return {
+    exam: mapExam(payload.exam),
+    sheetTemplates: (payload.sheet_templates ?? []).map(mapExamSheetTemplate),
+    metrics: {
+      assignedStudentCount: payload.metrics.assigned_student_count,
+      submittedAnswerCount: payload.metrics.submitted_answer_count,
+      gradedSubmissionCount: payload.metrics.graded_submission_count,
+      pendingGradingCount: payload.metrics.pending_grading_count,
+      absentCount: payload.metrics.absent_count,
+      averageScore: payload.metrics.average_score,
+      participationRate: payload.metrics.participation_rate,
+    },
   }
 }
 
@@ -232,4 +350,39 @@ export async function upsertExamBuilder(
     auth: true,
     body: payload,
   })
+}
+
+export async function generateExamSheet(examId: string, academicYear: string): Promise<ExamSheetGeneration> {
+  const params = new URLSearchParams({ academic_year: academicYear })
+  const response = await apiRequest<ApiExamSheetGeneration>(
+    `/exams/${encodeURIComponent(examId)}/sheet-generation?${params.toString()}`,
+    {
+      method: "POST",
+      auth: true,
+    },
+  )
+  return mapExamSheetGeneration(response)
+}
+
+export async function publishExamById(
+  examId: string,
+  academicYear: string,
+  payload: PublishExamPayload,
+): Promise<Exam> {
+  const params = new URLSearchParams({ academic_year: academicYear })
+  const response = await apiRequest<ApiExam>(`/exams/${encodeURIComponent(examId)}/publish?${params.toString()}`, {
+    method: "POST",
+    auth: true,
+    body: payload,
+  })
+  return mapExam(response)
+}
+
+export async function getExamOverviewById(examId: string, academicYear: string): Promise<ExamOverview> {
+  const params = new URLSearchParams({ academic_year: academicYear })
+  const response = await apiRequest<ApiExamOverview>(`/exams/${encodeURIComponent(examId)}/overview?${params.toString()}`, {
+    method: "GET",
+    auth: true,
+  })
+  return mapExamOverview(response)
 }

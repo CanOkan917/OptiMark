@@ -9,3 +9,11 @@ body {
   min-height: 100vh;
   background: #f5f7fb;
 }
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}

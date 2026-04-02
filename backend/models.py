@@ -222,6 +222,60 @@ class ExamAuditLog(Base):
     )
 
 
+class ExamSheetTemplate(Base):
+    __tablename__ = "exam_sheet_templates"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    exam_id: Mapped[int] = mapped_column(
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    template_json: Mapped[str] = mapped_column(Text, nullable=False)
+    pdf_storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    question_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    option_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    generated_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ExamSubmission(Base):
+    __tablename__ = "exam_submissions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    exam_id: Mapped[int] = mapped_column(
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    student_id: Mapped[int | None] = mapped_column(
+        ForeignKey("students.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="submitted")
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    submitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    graded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
 class Student(Base):
     __tablename__ = "students"
     __table_args__ = (UniqueConstraint("academic_year", "student_no", name="uq_students_year_student_no"),)

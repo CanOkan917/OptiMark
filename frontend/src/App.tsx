@@ -21,6 +21,7 @@ import {StudentDetailPage} from "./pages/StudentDetailPage.tsx";
 import {StudentEditPage} from "./pages/StudentEditPage.tsx";
 import {StudentGroupFormPage} from "./pages/StudentGroupFormPage.tsx";
 import {StudentsMockProvider} from "./students/StudentsMockContext.tsx";
+import {ExamOverviewPage} from "./pages/ExamOverviewPage.tsx";
 
 function NotFoundRedirect() {
     const {isAuthenticated} = useAuth()
@@ -58,6 +59,10 @@ export default function App() {
                         <Route
                             path="exams/:id/builder"
                             element={<ExamBuilderPage/>}
+                        />
+                        <Route
+                            path="exams/:id"
+                            element={<ExamOverviewPage/>}
                         />
                         <Route
                             path="exams/:id/publish"

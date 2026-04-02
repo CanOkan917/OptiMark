@@ -17,6 +17,8 @@ import {
 import {ApiError} from "../api/client"
 import {useAcademic} from "../academic/AcademicContext"
 import type {ScoringFormula} from "../academic/types"
+import {getStudentGroups} from "../api/students"
+import {publishExamById} from "../api/exams"
 
 const defaultBubbleConfig = {
     template_style: "standard",
@@ -29,19 +31,16 @@ const defaultBubbleConfig = {
     booklet_code_label: "Booklet",
 }
 
-const presetGroups = [
-    "Group A",
-    "Group B",
-    "Group C",
-    "Morning Session",
-    "Afternoon Session",
-    "Retake Students",
-]
+interface GroupOption {
+    id: string
+    label: string
+    missing?: boolean
+}
 
 export function ExamPublishSettingsPage() {
     const navigate = useNavigate()
     const {id: examId} = useParams()
-    const {fetchExamById, updateExam} = useAcademic()
+    const {fetchExamById, selectedAcademicYear} = useAcademic()
 
     const [isLoading, setIsLoading] = useState(true)
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -53,13 +52,20 @@ export function ExamPublishSettingsPage() {
     const [durationMinutes, setDurationMinutes] = useState(60)
     const [scoringFormula, setScoringFormula] = useState<ScoringFormula>("standard")
     const [assignedGroups, setAssignedGroups] = useState<string[]>([])
-    const [newGroupInput, setNewGroupInput] = useState("")
+    const [groupOptions, setGroupOptions] = useState<GroupOption[]>([])
     const [bubbleConfig, setBubbleConfig] = useState<Record<string, string | number | boolean>>(defaultBubbleConfig)
 
     const availableGroups = useMemo(() => {
-        const merged = [...presetGroups, ...assignedGroups]
-        return Array.from(new Set(merged))
-    }, [assignedGroups])
+        const knownGroupIds = new Set(groupOptions.map((group) => group.id))
+        const missingAssigned = assignedGroups
+            .filter((groupId) => !knownGroupIds.has(groupId))
+            .map((groupId) => ({
+                id: groupId,
+                label: `${groupId} (not found in current academic year)`,
+                missing: true,
+            }))
+        return [...groupOptions, ...missingAssigned]
+    }, [assignedGroups, groupOptions])
 
     useEffect(() => {
         let cancelled = false
@@ -73,7 +79,10 @@ export function ExamPublishSettingsPage() {
 
             setIsLoading(true)
             try {
-                const exam = await fetchExamById(examId)
+                const [exam, groups] = await Promise.all([
+                    fetchExamById(examId),
+                    getStudentGroups(selectedAcademicYear),
+                ])
                 if (!exam || cancelled) return
 
                 setTitle(exam.title)
@@ -81,6 +90,12 @@ export function ExamPublishSettingsPage() {
                 setDurationMinutes(exam.durationMinutes)
                 setScoringFormula(exam.scoringFormula)
                 setAssignedGroups(exam.assignedStudentGroups ?? [])
+                setGroupOptions(
+                    groups.map((group) => ({
+                        id: group.id,
+                        label: `${group.code} - ${group.name}`,
+                    })),
+                )
                 setBubbleConfig({...defaultBubbleConfig, ...(exam.bubbleSheetConfig ?? {})})
                 setError(null)
             } catch (err) {
@@ -98,33 +113,19 @@ export function ExamPublishSettingsPage() {
         return () => {
             cancelled = true
         }
-    }, [examId, fetchExamById])
+    }, [examId, fetchExamById, selectedAcademicYear])
 
-    const toggleGroup = (group: string) => {
+    const toggleGroup = (groupId: string) => {
         setAssignedGroups((current) =>
-            current.includes(group) ? current.filter((item) => item !== group) : [...current, group],
+            current.includes(groupId) ? current.filter((item) => item !== groupId) : [...current, groupId],
         )
-    }
-
-    const addCustomGroup = () => {
-        const value = newGroupInput.trim()
-        if (!value) return
-        if (!assignedGroups.includes(value)) {
-            setAssignedGroups((current) => [...current, value])
-        }
-        setNewGroupInput("")
-    }
-
-    const handleCustomGroupKeydown = (e: React.KeyboardEvent) => {
-        if (e.key === "Enter") {
-            e.preventDefault()
-            addCustomGroup()
-        }
     }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!examId) return
+        const validGroupIds = new Set(groupOptions.map((group) => group.id))
+        const selectedValidGroups = assignedGroups.filter((groupId) => validGroupIds.has(groupId))
 
         if (!title.trim()) {
             setError("Exam title is required.")
@@ -134,8 +135,8 @@ export function ExamPublishSettingsPage() {
             setError("Exam date is required.")
             return
         }
-        if (assignedGroups.length === 0) {
-            setError("Assign at least one student group before publishing.")
+        if (selectedValidGroups.length === 0) {
+            setError("Assign at least one valid student group before publishing.")
             return
         }
 
@@ -144,18 +145,17 @@ export function ExamPublishSettingsPage() {
         setSuccess(null)
 
         try {
-            await updateExam(examId, {
+            await publishExamById(examId, selectedAcademicYear, {
                 title: title.trim(),
-                examDate,
-                durationMinutes,
-                scoringFormula,
-                assignedStudentGroups: assignedGroups,
-                bubbleSheetConfig: bubbleConfig,
-                publishStatus: "published",
+                exam_date: examDate,
+                duration_minutes: durationMinutes,
+                scoring_formula: scoringFormula,
+                assigned_student_groups: selectedValidGroups,
+                bubble_sheet_config: bubbleConfig,
             })
             setSuccess("Exam successfully published. You can now generate bubble sheets or start scanning.")
             setTimeout(() => {
-                navigate("/dashboard/exams")
+                navigate(`/dashboard/exams/${examId}`)
             }, 2500)
         } catch (err) {
             const message = err instanceof ApiError
@@ -206,10 +206,10 @@ export function ExamPublishSettingsPage() {
             <div className="flex items-center justify-between">
                 <button
                     type="button"
-                    onClick={() => navigate(`/dashboard/exams/${examId}/builder`)}
+                    onClick={() => navigate(`/dashboard/exams/${examId}`)}
                     className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900"
                 >
-                    <ArrowLeft className="h-4 w-4"/> Back to Builder
+                    <ArrowLeft className="h-4 w-4"/> Back to Overview
                 </button>
             </div>
 
@@ -331,40 +331,31 @@ export function ExamPublishSettingsPage() {
 
                             <div className="flex flex-wrap gap-2.5">
                                 {availableGroups.map((group) => {
-                                    const active = assignedGroups.includes(group)
+                                    const active = assignedGroups.includes(group.id)
                                     return (
                                         <button
-                                            key={group}
+                                            key={group.id}
                                             type="button"
-                                            onClick={() => toggleGroup(group)}
+                                            onClick={() => toggleGroup(group.id)}
                                             className={`cursor-pointer rounded-xl border px-4 py-2 text-sm font-bold transition-all ${
                                                 active
                                                     ? "border-cyan-300 bg-cyan-50 text-cyan-800 shadow-sm"
-                                                    : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                                                    : group.missing
+                                                        ? "border-amber-200 bg-amber-50 text-amber-700 hover:border-amber-300 hover:bg-amber-100"
+                                                        : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
                                             }`}
                                         >
-                                            {group}
+                                            {group.label}
                                         </button>
                                     )
                                 })}
                             </div>
 
-                            <div className="mt-5 flex gap-3 border-t border-slate-100 pt-5">
-                                <input
-                                    value={newGroupInput}
-                                    onChange={(e) => setNewGroupInput(e.target.value)}
-                                    onKeyDown={handleCustomGroupKeydown}
-                                    placeholder="Type a custom group name..."
-                                    className="h-11 flex-1 rounded-xl border border-slate-300 px-4 text-sm font-medium outline-none transition-colors focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={addCustomGroup}
-                                    className="cursor-pointer rounded-xl bg-slate-900 px-6 text-sm font-bold text-white transition-colors hover:bg-slate-800"
-                                >
-                                    Add Group
-                                </button>
-                            </div>
+                            {availableGroups.length === 0 ? (
+                                <p className="mt-5 border-t border-slate-100 pt-5 text-sm font-medium text-slate-500">
+                                    No student groups found for {selectedAcademicYear}. Create groups first.
+                                </p>
+                            ) : null}
                         </div>
                     </div>
 
@@ -456,7 +447,7 @@ export function ExamPublishSettingsPage() {
                     <div className="flex items-center justify-end gap-4 border-t border-slate-100 pt-8">
                         <button
                             type="button"
-                            onClick={() => navigate(`/dashboard/exams/${examId}/builder`)}
+                            onClick={() => navigate(`/dashboard/exams/${examId}`)}
                             className="cursor-pointer rounded-xl px-6 py-3 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-100"
                         >
                             Cancel

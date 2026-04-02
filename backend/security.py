@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import os
 import secrets
+from typing import Any
 
 from jose import JWTError, jwt
 
@@ -48,14 +49,29 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(subject: str, expires_minutes: int | None = None) -> str:
     expire_minutes = expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES
+    payload: dict[str, Any] = {"sub": subject}
+    return create_token(payload, expires_minutes=expire_minutes)
+
+
+def create_token(payload: dict[str, Any], expires_minutes: int | None = None) -> str:
+    expire_minutes = expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES
     expire_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
-    payload = {"sub": subject, "exp": expire_at}
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+    token_payload = dict(payload)
+    token_payload["exp"] = expire_at
+    return jwt.encode(token_payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_token_payload(token: str) -> dict[str, Any] | None:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 def decode_token(token: str) -> str | None:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload.get("sub")
-    except JWTError:
+    payload = decode_token_payload(token)
+    if payload is None:
         return None
+    subject = payload.get("sub")
+    return subject if isinstance(subject, str) else None

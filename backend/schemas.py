@@ -130,6 +130,15 @@ class ExamPatch(BaseModel):
     publish_status: Literal["draft", "published"] | None = None
 
 
+class ExamPublishPayload(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    exam_date: date
+    duration_minutes: int = Field(ge=1, le=600)
+    scoring_formula: Literal["standard", "penalty"]
+    assigned_student_groups: list[str] = Field(min_length=1)
+    bubble_sheet_config: dict[str, bool | str | int] = Field(default_factory=dict)
+
+
 class ExamQuestionsUpsert(BaseModel):
     questions: list[ExamQuestionPayload]
 
@@ -159,6 +168,41 @@ class ExamOut(BaseModel):
 
 class ExamsResponse(BaseModel):
     items: list[ExamOut]
+
+
+class ExamSheetGenerationOut(BaseModel):
+    id: str
+    exam_id: str
+    academic_year: str
+    question_count: int
+    option_count: Literal[4, 5]
+    created_at: datetime
+    download_url: str
+
+
+class ExamSheetTemplateOut(BaseModel):
+    id: str
+    exam_id: str
+    question_count: int
+    option_count: Literal[4, 5]
+    created_at: datetime
+    download_url: str
+
+
+class ExamOverviewMetricsOut(BaseModel):
+    assigned_student_count: int
+    submitted_answer_count: int
+    graded_submission_count: int
+    pending_grading_count: int
+    absent_count: int
+    average_score: float | None
+    participation_rate: float
+
+
+class ExamOverviewOut(BaseModel):
+    exam: ExamOut
+    sheet_templates: list[ExamSheetTemplateOut]
+    metrics: ExamOverviewMetricsOut
 
 
 class ExamBuilderOptionPayload(BaseModel):

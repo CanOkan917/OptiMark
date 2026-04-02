@@ -12,14 +12,16 @@ import {
     Printer,
     ScanLine,
     X,
-    Check
+    Check,
+    AlertTriangle
 } from "lucide-react"
 import {motion, AnimatePresence} from "framer-motion"
 import {ApiError} from "../api/client"
+import {generateExamSheet} from "../api/exams"
 
 export function ExamManagementPage() {
     const navigate = useNavigate()
-    const {courses, createExam, exams, refreshCourses, refreshExams} = useAcademic()
+    const {courses, createExam, exams, refreshCourses, refreshExams, selectedAcademicYear} = useAcademic()
 
     const [searchParams, setSearchParams] = useSearchParams()
     const initialCourseId = searchParams.get("courseId") ?? "all"
@@ -38,8 +40,10 @@ export function ExamManagementPage() {
     const [scoringFormula, setScoringFormula] = useState<"standard" | "penalty">("standard")
 
     // Feedback
-    const [error, setError] = useState<string | null>(null)
+    const [createError, setCreateError] = useState<string | null>(null)
+    const [actionError, setActionError] = useState<string | null>(null)
     const [success, setSuccess] = useState<string | null>(null)
+    const [generatingExamId, setGeneratingExamId] = useState<string | null>(null)
 
     const displayExams = useMemo(
         () => [...exams].sort((a, b) => new Date(b.examDate).getTime() - new Date(a.examDate).getTime()),
@@ -59,19 +63,20 @@ export function ExamManagementPage() {
 
     const openCreateModal = () => {
         setNewExamCourseId(selectedCourseId !== "all" ? selectedCourseId : "")
+        setCreateError(null)
         setIsCreateModalOpen(true)
     }
 
     const handleCreateExam = async (e: React.FormEvent) => {
         e.preventDefault()
-        setError(null)
+        setCreateError(null)
 
         if (!newExamCourseId) {
-            setError("Please select a course for this exam.")
+            setCreateError("Please select a course for this exam.")
             return
         }
         if (!title.trim()) {
-            setError("Exam title is required.")
+            setCreateError("Exam title is required.")
             return
         }
 
@@ -93,14 +98,49 @@ export function ExamManagementPage() {
             setDurationMinutes(60)
             setOptionCount(4)
             setScoringFormula("standard")
+            setCreateError(null)
 
             setTimeout(() => setSuccess(null), 3000)
         } catch (err) {
             if (err instanceof ApiError) {
-                setError(err.message)
+                setCreateError(err.message)
                 return
             }
-            setError("Exam could not be created.")
+            setCreateError("Exam could not be created.")
+        }
+    }
+
+    const handleGenerateSheet = async (examId: string, examTitle: string) => {
+        setActionError(null)
+        setSuccess(null)
+        setGeneratingExamId(examId)
+
+        const downloadTab = window.open("about:blank", "_blank")
+
+        try {
+            const generated = await generateExamSheet(examId, selectedAcademicYear)
+
+            if (downloadTab && !downloadTab.closed) {
+                downloadTab.location.href = generated.downloadUrl
+            } else {
+                window.open(generated.downloadUrl, "_blank")
+            }
+
+            setSuccess(`"${examTitle}" sheet generated. Download started.`)
+            setTimeout(() => setSuccess(null), 5000)
+            await refreshExams(selectedCourseId, searchTerm)
+        } catch (err) {
+            if (downloadTab && !downloadTab.closed) {
+                downloadTab.close()
+            }
+
+            if (err instanceof ApiError) {
+                setActionError(err.message)
+                return
+            }
+            setActionError("Sheet could not be generated.")
+        } finally {
+            setGeneratingExamId((current) => (current === examId ? null : current))
         }
     }
 
@@ -161,6 +201,25 @@ export function ExamManagementPage() {
                 )}
             </AnimatePresence>
 
+            <AnimatePresence>
+                {actionError && (
+                    <motion.div initial={{opacity: 0, y: -10}} animate={{opacity: 1, y: 0}}
+                                exit={{opacity: 0, height: 0}}
+                                className="rounded-xl bg-rose-50 px-4 py-3 border border-rose-100 flex items-center justify-between gap-2 text-sm font-bold text-rose-700">
+                        <span className="inline-flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4"/> {actionError}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => setActionError(null)}
+                            className="rounded-md p-1 text-rose-500 transition-colors hover:bg-rose-100 hover:text-rose-700"
+                        >
+                            <X className="h-4 w-4"/>
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
                 {displayExams.length === 0 ? (
                     <div
@@ -173,6 +232,8 @@ export function ExamManagementPage() {
                     displayExams.map((exam) => {
                         const course = courses.find(c => c.id === exam.courseId)
                         const isDraft = exam.questions.length === 0
+                        const isPublished = exam.publishStatus === "published"
+                        const isGeneratingThisExam = generatingExamId === exam.id
 
                         return (
                             <motion.div
@@ -219,10 +280,15 @@ export function ExamManagementPage() {
                                     <div className="flex gap-1">
                                         <button
                                             title="Print Bubble Sheets"
+                                            onClick={() => void handleGenerateSheet(exam.id, exam.title)}
                                             className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-cyan-600 hover:shadow-sm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                                            disabled={isDraft}
+                                            disabled={isDraft || generatingExamId !== null}
                                         >
-                                            <Printer className="h-4 w-4"/>
+                                            {isGeneratingThisExam ? (
+                                                <Settings2 className="h-4 w-4 animate-spin"/>
+                                            ) : (
+                                                <Printer className="h-4 w-4"/>
+                                            )}
                                         </button>
                                         <button
                                             title="Scan Papers"
@@ -234,10 +300,10 @@ export function ExamManagementPage() {
                                         </button>
                                     </div>
                                     <button
-                                        onClick={() => navigate(`/dashboard/exams/${exam.id}/builder`)}
+                                        onClick={() => navigate(isPublished ? `/dashboard/exams/${exam.id}` : `/dashboard/exams/${exam.id}/builder`)}
                                         className="inline-flex items-center gap-1 text-sm font-bold text-cyan-600 hover:text-cyan-700 cursor-pointer"
                                     >
-                                        {isDraft ? "Build Questions" : "Edit Details"}
+                                        {isPublished ? "Open Overview" : "Open Editor"}
                                         <ChevronRight className="h-4 w-4"/>
                                     </button>
                                 </div>
@@ -347,8 +413,9 @@ export function ExamManagementPage() {
                                     </div>
                                 </div>
 
-                                {error && <p className="text-sm font-medium text-rose-600 flex items-center gap-1.5"><X
-                                    className="h-4 w-4"/> {error}</p>}
+                                {createError && <p
+                                    className="text-sm font-medium text-rose-600 flex items-center gap-1.5"><X
+                                    className="h-4 w-4"/> {createError}</p>}
 
                                 <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-slate-100">
                                     <button type="button" onClick={() => setIsCreateModalOpen(false)}
