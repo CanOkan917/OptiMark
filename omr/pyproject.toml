@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optimark-omr"
+version = "0.1.0"
+description = "Optical Mark Recognition library for OptiMark"
+requires-python = ">=3.11"
+dependencies = [
+    "opencv-python-headless>=4.10,<5",
+    "numpy>=1.26,<3",
+    "reportlab>=4.2,<5",
+]
+
+# Flat layout: this pyproject lives inside the package directory, so the
+# ``omr`` package maps to the current folder.
+[tool.setuptools]
+packages = ["omr"]
+package-dir = {"omr" = "."}

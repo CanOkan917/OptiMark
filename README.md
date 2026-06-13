@@ -78,6 +78,17 @@ OptiMark/
 │   ├── layout.py
 │   ├── sheet_generator.py
 │   └── template_exporter.py
+├── backend/
+│   ├── app.py
+│   ├── api.py
+│   ├── application_services.py
+│   ├── database.py
+│   ├── deps.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── security.py
+│   ├── services/
+│   └── routes/
 ├── omr/
 │   ├── answer_reader.py
 │   ├── marker_detector.py

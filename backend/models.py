@@ -276,6 +276,67 @@ class ExamSubmission(Base):
     )
 
 
+class ScanJob(Base):
+    __tablename__ = "scan_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    exam_id: Mapped[int] = mapped_column(
+        ForeignKey("exams.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sheet_template_id: Mapped[int | None] = mapped_column(
+        ForeignKey("exam_sheet_templates.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    submission_id: Mapped[int | None] = mapped_column(
+        ForeignKey("exam_submissions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    matched_student_id: Mapped[int | None] = mapped_column(
+        ForeignKey("students.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    image_storage_path: Mapped[str] = mapped_column(Text, nullable=False)
+    output_dir: Mapped[str | None] = mapped_column(Text, nullable=True)
+    overlay_storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # queued -> processing -> completed | failed
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued", index=True)
+    progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    queue_job_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    detected_student_no: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detected_markers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processing_mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    correct_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    wrong_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    blank_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ambiguous_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Student(Base):
     __tablename__ = "students"
     __table_args__ = (UniqueConstraint("academic_year", "student_no", name="uq_students_year_student_no"),)

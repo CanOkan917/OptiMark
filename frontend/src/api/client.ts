@@ -1,6 +1,8 @@
 import { tokenStorage } from "../auth/storage"
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001"
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api"
+
+export { API_BASE_URL }
 let unauthorizedHandler: (() => void) | null = null
 
 export class ApiError extends Error {
@@ -99,4 +101,63 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   return payload as T
+}
+
+/** Multipart upload helper. Lets the browser set the multipart boundary. */
+export async function apiUpload<T>(
+  path: string,
+  formData: FormData,
+  options: { auth?: boolean } = {},
+): Promise<T> {
+  const { auth = false } = options
+  const requestHeaders = new Headers()
+
+  if (auth) {
+    const token = tokenStorage.get()
+    if (token) {
+      requestHeaders.set("Authorization", `Bearer ${token}`)
+    }
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: requestHeaders,
+    body: formData,
+  })
+
+  const responseContentType = response.headers.get("content-type") ?? ""
+  const isJson = responseContentType.includes("application/json")
+  const payload = isJson ? await response.json() : null
+
+  if (!response.ok) {
+    const message = formatApiErrorMessage(payload, response.status)
+    if (response.status === 401) {
+      tokenStorage.clear()
+      unauthorizedHandler?.()
+    }
+    throw new ApiError(message, response.status)
+  }
+
+  return payload as T
+}
+
+/** Fetch an authenticated binary resource and return an object URL. */
+export async function apiFetchBlobUrl(path: string): Promise<string> {
+  const requestHeaders = new Headers()
+  const token = tokenStorage.get()
+  if (token) {
+    requestHeaders.set("Authorization", `Bearer ${token}`)
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { headers: requestHeaders })
+  if (!response.ok) {
+    if (response.status === 401) {
+      tokenStorage.clear()
+      unauthorizedHandler?.()
+    }
+    throw new ApiError(`Request failed (${response.status})`, response.status)
+  }
+
+  const blob = await response.blob()
+  return URL.createObjectURL(blob)
 }

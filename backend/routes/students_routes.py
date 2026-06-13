@@ -1,6 +1,53 @@
-from ..api_app import *  # noqa: F401,F403
+import csv
+from io import StringIO
 
-@app.get("/student-groups", response_model=StudentGroupsResponse)
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from ..application_services import (
+    ensure_academic_year_is_writable,
+    ensure_request_year_matches_selected,
+    get_group_ids_by_student_ids,
+    get_student_counts_by_group_ids,
+    normalize_csv_header,
+    parse_public_id,
+    serialize_student,
+    serialize_student_group,
+    serialize_student_import_job,
+    sync_student_group_memberships,
+    validate_academic_year,
+    validate_group_ids_for_year,
+)
+from ..database import get_db
+from ..deps import get_current_user, require_roles
+from ..models import (
+    Student,
+    StudentGroup,
+    StudentGroupMembership,
+    StudentImportJob,
+    User,
+)
+from ..schemas import (
+    StudentCreate,
+    StudentCsvImportRequest,
+    StudentCsvImportResponse,
+    StudentGroupCreate,
+    StudentGroupOut,
+    StudentGroupPatch,
+    StudentGroupsResponse,
+    StudentImportJobCreate,
+    StudentImportJobOut,
+    StudentImportJobsResponse,
+    StudentOut,
+    StudentPatch,
+    StudentsResponse,
+)
+
+router = APIRouter()
+
+@router.get("/student-groups", response_model=StudentGroupsResponse)
 def list_student_groups(
     academic_year: str = Query(...),
     search: str | None = Query(default=None),
@@ -24,7 +71,7 @@ def list_student_groups(
         items=[serialize_student_group(item, counts.get(item.id, 0)) for item in groups]
     )
 
-@app.post("/student-groups", response_model=StudentGroupOut, status_code=status.HTTP_201_CREATED)
+@router.post("/student-groups", response_model=StudentGroupOut, status_code=status.HTTP_201_CREATED)
 def create_student_group(
     payload: StudentGroupCreate,
     current_user: User = Depends(require_roles("admin", "school_admin", "teacher")),
@@ -56,7 +103,7 @@ def create_student_group(
     db.refresh(group)
     return serialize_student_group(group, 0)
 
-@app.get("/student-groups/{group_id}", response_model=StudentGroupOut)
+@router.get("/student-groups/{group_id}", response_model=StudentGroupOut)
 def get_student_group(
     group_id: str,
     academic_year: str = Query(...),
@@ -76,7 +123,7 @@ def get_student_group(
     counts = get_student_counts_by_group_ids(db, [group.id])
     return serialize_student_group(group, counts.get(group.id, 0))
 
-@app.patch("/student-groups/{group_id}", response_model=StudentGroupOut)
+@router.patch("/student-groups/{group_id}", response_model=StudentGroupOut)
 def update_student_group(
     group_id: str,
     payload: StudentGroupPatch,
@@ -126,7 +173,7 @@ def update_student_group(
     counts = get_student_counts_by_group_ids(db, [group.id])
     return serialize_student_group(group, counts.get(group.id, 0))
 
-@app.delete("/student-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/student-groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_student_group(
     group_id: str,
     academic_year: str = Query(...),
@@ -147,7 +194,7 @@ def delete_student_group(
     db.delete(group)
     db.commit()
 
-@app.get("/students", response_model=StudentsResponse)
+@router.get("/students", response_model=StudentsResponse)
 def list_students(
     academic_year: str = Query(...),
     search: str | None = Query(default=None),
@@ -181,7 +228,7 @@ def list_students(
     mapping = get_group_ids_by_student_ids(db, [item.id for item in students])
     return StudentsResponse(items=[serialize_student(item, mapping.get(item.id, [])) for item in students])
 
-@app.post("/students", response_model=StudentOut, status_code=status.HTTP_201_CREATED)
+@router.post("/students", response_model=StudentOut, status_code=status.HTTP_201_CREATED)
 def create_student(
     payload: StudentCreate,
     current_user: User = Depends(require_roles("admin", "school_admin", "teacher")),
@@ -222,7 +269,7 @@ def create_student(
     mapping = get_group_ids_by_student_ids(db, [student.id])
     return serialize_student(student, mapping.get(student.id, []))
 
-@app.get("/students/{student_id}", response_model=StudentOut)
+@router.get("/students/{student_id}", response_model=StudentOut)
 def get_student(
     student_id: str,
     academic_year: str = Query(...),
@@ -242,7 +289,7 @@ def get_student(
     mapping = get_group_ids_by_student_ids(db, [student.id])
     return serialize_student(student, mapping.get(student.id, []))
 
-@app.patch("/students/{student_id}", response_model=StudentOut)
+@router.patch("/students/{student_id}", response_model=StudentOut)
 def update_student(
     student_id: str,
     payload: StudentPatch,
@@ -301,7 +348,7 @@ def update_student(
     mapping = get_group_ids_by_student_ids(db, [student.id])
     return serialize_student(student, mapping.get(student.id, []))
 
-@app.delete("/students/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/students/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_student(
     student_id: str,
     academic_year: str = Query(...),
@@ -322,7 +369,7 @@ def delete_student(
     db.delete(student)
     db.commit()
 
-@app.get("/student-import-jobs", response_model=StudentImportJobsResponse)
+@router.get("/student-import-jobs", response_model=StudentImportJobsResponse)
 def list_student_import_jobs(
     academic_year: str = Query(...),
     current_user: User = Depends(get_current_user),
@@ -336,7 +383,7 @@ def list_student_import_jobs(
     ).all()
     return StudentImportJobsResponse(items=[serialize_student_import_job(item) for item in jobs])
 
-@app.post("/student-import-jobs/mock", response_model=StudentImportJobOut, status_code=status.HTTP_201_CREATED)
+@router.post("/student-import-jobs/mock", response_model=StudentImportJobOut, status_code=status.HTTP_201_CREATED)
 def create_student_import_job_mock(
     payload: StudentImportJobCreate,
     current_user: User = Depends(require_roles("admin", "school_admin", "teacher")),
@@ -367,7 +414,7 @@ def create_student_import_job_mock(
     db.refresh(job)
     return serialize_student_import_job(job)
 
-@app.post("/student-import-jobs/import", response_model=StudentCsvImportResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/student-import-jobs/import", response_model=StudentCsvImportResponse, status_code=status.HTTP_201_CREATED)
 def import_students_from_csv(
     payload: StudentCsvImportRequest,
     current_user: User = Depends(require_roles("admin", "school_admin", "teacher")),

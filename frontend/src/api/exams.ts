@@ -386,3 +386,95 @@ export async function getExamOverviewById(examId: string, academicYear: string):
   })
   return mapExamOverview(response)
 }
+
+export interface ExamAnalyticsBucket {
+  label: string
+  count: number
+}
+
+export interface ExamAnalyticsQuestionStat {
+  questionNo: number
+  correctOption: string | null
+  correct: number
+  wrong: number
+  blank: number
+  ambiguous: number
+  answered: number
+  correctRate: number
+}
+
+export interface ExamAnalytics {
+  totalScans: number
+  completedScans: number
+  failedScans: number
+  pendingScans: number
+  matchedStudents: number
+  unmatchedScans: number
+  maxScore: number | null
+  averageScore: number | null
+  medianScore: number | null
+  highestScore: number | null
+  lowestScore: number | null
+  passRate: number | null
+  scoreDistribution: ExamAnalyticsBucket[]
+  questionStats: ExamAnalyticsQuestionStat[]
+}
+
+interface ApiExamAnalytics {
+  total_scans: number
+  completed_scans: number
+  failed_scans: number
+  pending_scans: number
+  matched_students: number
+  unmatched_scans: number
+  max_score: number | null
+  average_score: number | null
+  median_score: number | null
+  highest_score: number | null
+  lowest_score: number | null
+  pass_rate: number | null
+  score_distribution: ExamAnalyticsBucket[]
+  question_stats: {
+    question_no: number
+    correct_option: string | null
+    correct: number
+    wrong: number
+    blank: number
+    ambiguous: number
+    answered: number
+    correct_rate: number
+  }[]
+}
+
+export async function getExamAnalytics(examId: string, academicYear: string): Promise<ExamAnalytics> {
+  const params = new URLSearchParams({ academic_year: academicYear })
+  const r = await apiRequest<ApiExamAnalytics>(
+    `/exams/${encodeURIComponent(examId)}/analytics?${params.toString()}`,
+    { method: "GET", auth: true },
+  )
+  return {
+    totalScans: r.total_scans,
+    completedScans: r.completed_scans,
+    failedScans: r.failed_scans,
+    pendingScans: r.pending_scans,
+    matchedStudents: r.matched_students,
+    unmatchedScans: r.unmatched_scans,
+    maxScore: r.max_score,
+    averageScore: r.average_score,
+    medianScore: r.median_score,
+    highestScore: r.highest_score,
+    lowestScore: r.lowest_score,
+    passRate: r.pass_rate,
+    scoreDistribution: r.score_distribution,
+    questionStats: r.question_stats.map((q) => ({
+      questionNo: q.question_no,
+      correctOption: q.correct_option,
+      correct: q.correct,
+      wrong: q.wrong,
+      blank: q.blank,
+      ambiguous: q.ambiguous,
+      answered: q.answered,
+      correctRate: q.correct_rate,
+    })),
+  }
+}

@@ -22,6 +22,7 @@ import {StudentEditPage} from "./pages/StudentEditPage.tsx";
 import {StudentGroupFormPage} from "./pages/StudentGroupFormPage.tsx";
 import {StudentsMockProvider} from "./students/StudentsMockContext.tsx";
 import {ExamOverviewPage} from "./pages/ExamOverviewPage.tsx";
+import {StaffManagementPage} from "./pages/StaffManagementPage.tsx";
 
 function NotFoundRedirect() {
     const {isAuthenticated} = useAuth()
@@ -107,6 +108,9 @@ export default function App() {
                         />
                         <Route element={<RoleRoute allowedRoles={["admin", "school_admin", "analyst"]}/>}>
                             <Route path="summary" element={<DashboardSummaryPage/>}/>
+                        </Route>
+                        <Route element={<RoleRoute allowedRoles={["admin", "school_admin"]}/>}>
+                            <Route path="staff" element={<StaffManagementPage/>}/>
                         </Route>
                     </Route>
                 </Route>

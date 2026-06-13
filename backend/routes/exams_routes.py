@@ -1,6 +1,76 @@
-from ..api_app import *  # noqa: F401,F403
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+from typing import Any
 
-@app.post("/exams", response_model=ExamOut, status_code=status.HTTP_201_CREATED)
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from ..application_services import (
+    DOWNLOAD_TOKEN_EXPIRE_MINUTES,
+    DOWNLOAD_TOKEN_PURPOSE,
+    _default_option_rows,
+    _parse_json_list,
+    build_exam_analytics,
+    build_exam_overview_metrics,
+    build_exam_sheet_download_url,
+    build_sheet_template_download_url,
+    can_manage_course,
+    ensure_academic_year_is_writable,
+    ensure_exam_builder_is_editable,
+    ensure_request_year_matches_selected,
+    extract_complete_builder_questions,
+    fetch_exam_questions,
+    generate_sheet_artifacts_for_exam,
+    parse_int_claim,
+    parse_public_id,
+    read_builder_questions,
+    serialize_exam,
+    serialize_exam_builder,
+    serialize_exam_sheet_generation,
+    serialize_exam_sheet_template,
+    sync_exam_questions_from_builder,
+    to_exam_public_id,
+    to_exam_sheet_template_public_id,
+    validate_academic_year,
+    validate_builder_compatibility,
+    validate_builder_questions_payload,
+    validate_group_ids_for_year,
+    validate_questions_payload,
+)
+from ..database import get_db
+from ..deps import get_current_user, require_roles
+from ..models import (
+    Course,
+    CourseTeacher,
+    Exam,
+    ExamAuditLog,
+    ExamQuestion,
+    ExamSheetTemplate,
+    User,
+)
+from ..schemas import (
+    ExamAnalyticsOut,
+    ExamBuilderMetaPatch,
+    ExamBuilderOut,
+    ExamBuilderQuestionSave,
+    ExamBuilderUpsert,
+    ExamCreate,
+    ExamOut,
+    ExamOverviewOut,
+    ExamPatch,
+    ExamPublishPayload,
+    ExamQuestionsUpsert,
+    ExamSheetGenerationOut,
+    ExamsResponse,
+)
+from ..security import create_token, decode_token_payload
+
+router = APIRouter()
+
+@router.post("/exams", response_model=ExamOut, status_code=status.HTTP_201_CREATED)
 def create_exam(
     payload: ExamCreate,
     current_user: User = Depends(require_roles("admin", "school_admin", "teacher")),
@@ -95,7 +165,7 @@ def create_exam(
     persisted_questions = fetch_exam_questions(db, exam.id)
     return serialize_exam(exam, persisted_questions)
 
-@app.get("/exams", response_model=ExamsResponse)
+@router.get("/exams", response_model=ExamsResponse)
 def list_exams(
     academic_year: str = Query(...),
     course_id: str | None = Query(default=None),
@@ -128,7 +198,7 @@ def list_exams(
 
     return ExamsResponse(items=[serialize_exam(exam, question_map.get(exam.id, [])) for exam in exams])
 
-@app.get("/exams/{exam_id}", response_model=ExamOut)
+@router.get("/exams/{exam_id}", response_model=ExamOut)
 def get_exam_detail(
     exam_id: str,
     academic_year: str = Query(...),
@@ -149,7 +219,7 @@ def get_exam_detail(
     questions = fetch_exam_questions(db, exam.id)
     return serialize_exam(exam, questions)
 
-@app.get("/exams/{exam_id}/builder", response_model=ExamBuilderOut)
+@router.get("/exams/{exam_id}/builder", response_model=ExamBuilderOut)
 def get_exam_builder(
     exam_id: str,
     academic_year: str = Query(...),
@@ -179,7 +249,7 @@ def get_exam_builder(
     builder_questions = read_builder_questions(db, exam)
     return serialize_exam_builder(exam, builder_questions)
 
-@app.post("/exams/{exam_id}/publish", response_model=ExamOut)
+@router.post("/exams/{exam_id}/publish", response_model=ExamOut)
 def publish_exam(
     exam_id: str,
     payload: ExamPublishPayload,
@@ -264,7 +334,7 @@ def publish_exam(
     questions = fetch_exam_questions(db, exam.id)
     return serialize_exam(exam, questions)
 
-@app.get("/exams/{exam_id}/overview", response_model=ExamOverviewOut)
+@router.get("/exams/{exam_id}/overview", response_model=ExamOverviewOut)
 def get_exam_overview(
     exam_id: str,
     request: Request,
@@ -314,7 +384,35 @@ def get_exam_overview(
         metrics=build_exam_overview_metrics(db, exam),
     )
 
-@app.post("/exams/{exam_id}/sheet-generation", response_model=ExamSheetGenerationOut, status_code=status.HTTP_201_CREATED)
+@router.get("/exams/{exam_id}/analytics", response_model=ExamAnalyticsOut)
+def get_exam_analytics(
+    exam_id: str,
+    academic_year: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ExamAnalyticsOut:
+    ensure_request_year_matches_selected(
+        db,
+        current_user,
+        academic_year,
+        mismatch_status_code=status.HTTP_404_NOT_FOUND,
+    )
+    parsed_exam_id = parse_public_id(exam_id, "e", "exam_id")
+    exam = db.scalar(select(Exam).where(Exam.id == parsed_exam_id))
+    if not exam or exam.academic_year != academic_year:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Exam not found")
+
+    course_teacher_user_ids = set(
+        db.scalars(
+            select(CourseTeacher.teacher_user_id).where(CourseTeacher.course_id == exam.course_id)
+        ).all()
+    )
+    if not can_manage_course(current_user, course_teacher_user_ids):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+    return build_exam_analytics(db, exam)
+
+@router.post("/exams/{exam_id}/sheet-generation", response_model=ExamSheetGenerationOut, status_code=status.HTTP_201_CREATED)
 def generate_exam_sheet(
     exam_id: str,
     request: Request,
@@ -411,7 +509,7 @@ def generate_exam_sheet(
     db.refresh(sheet_template)
     return serialize_exam_sheet_generation(sheet_template, exam, download_url)
 
-@app.get("/exams/{exam_id}/sheet-templates/{template_id}/download")
+@router.get("/exams/{exam_id}/sheet-templates/{template_id}/download")
 def download_exam_sheet_template_pdf(
     exam_id: str,
     template_id: str,
@@ -452,7 +550,7 @@ def download_exam_sheet_template_pdf(
         filename=pdf_path.name,
     )
 
-@app.put("/exams/{exam_id}/builder", response_model=ExamBuilderOut)
+@router.put("/exams/{exam_id}/builder", response_model=ExamBuilderOut)
 def upsert_exam_builder(
     exam_id: str,
     payload: ExamBuilderUpsert,
@@ -528,7 +626,7 @@ def upsert_exam_builder(
     builder_questions = read_builder_questions(db, exam)
     return serialize_exam_builder(exam, builder_questions)
 
-@app.patch("/exams/{exam_id}/builder/meta", response_model=ExamBuilderOut)
+@router.patch("/exams/{exam_id}/builder/meta", response_model=ExamBuilderOut)
 def update_exam_builder_meta(
     exam_id: str,
     payload: ExamBuilderMetaPatch,
@@ -623,7 +721,7 @@ def update_exam_builder_meta(
     db.refresh(exam)
     return serialize_exam_builder(exam, builder_questions)
 
-@app.put("/exams/{exam_id}/builder/questions/{question_id}", response_model=ExamBuilderOut)
+@router.put("/exams/{exam_id}/builder/questions/{question_id}", response_model=ExamBuilderOut)
 def upsert_exam_builder_question(
     exam_id: str,
     question_id: str,
@@ -695,7 +793,7 @@ def upsert_exam_builder_question(
     updated_questions = read_builder_questions(db, exam)
     return serialize_exam_builder(exam, updated_questions)
 
-@app.patch("/exams/{exam_id}", response_model=ExamOut)
+@router.patch("/exams/{exam_id}", response_model=ExamOut)
 def update_exam(
     exam_id: str,
     payload: ExamPatch,
@@ -766,7 +864,7 @@ def update_exam(
     questions = fetch_exam_questions(db, exam.id)
     return serialize_exam(exam, questions)
 
-@app.put("/exams/{exam_id}/questions", response_model=ExamOut)
+@router.put("/exams/{exam_id}/questions", response_model=ExamOut)
 def upsert_exam_questions(
     exam_id: str,
     payload: ExamQuestionsUpsert,

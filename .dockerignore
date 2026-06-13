@@ -1,0 +1,12 @@
+.git
+.idea
+.venv
+**/__pycache__
+**/*.pyc
+frontend
+output
+data
+test_images
+*.md
+.env
+.env.*

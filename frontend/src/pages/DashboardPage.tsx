@@ -1,8 +1,8 @@
 import {useEffect, useMemo, useState} from "react"
-import {AlertCircle, CheckCircle2, Clock, MoreHorizontal, ScanLine, Users, type LucideIcon} from "lucide-react"
+import {AlertCircle, CheckCircle2, Clock, ScanLine, Users, type LucideIcon} from "lucide-react"
 import {motion, type Variants} from "framer-motion"
 import {ApiError} from "../api/client"
-import {getDashboardSummary} from "../api/dashboard"
+import {getDashboardSummary, getRecentScans, type RecentScan} from "../api/dashboard"
 import {useAuth} from "../auth/AuthContext"
 import type {DashboardSummary} from "../types/auth"
 
@@ -15,20 +15,15 @@ interface StatCard {
     bgClass: string
 }
 
-interface ActivityItem {
-    id: string
-    examName: string
-    status: "Completed" | "Processing" | "Needs Review"
-    scannedCount: number
-    time: string
+function formatRelative(iso: string) {
+    const diffMs = Date.now() - new Date(iso).getTime()
+    const mins = Math.round(diffMs / 60000)
+    if (mins < 1) return "Just now"
+    if (mins < 60) return `${mins} min ago`
+    const hours = Math.round(mins / 60)
+    if (hours < 24) return `${hours}h ago`
+    return new Date(iso).toLocaleDateString()
 }
-
-const recentActivities: ActivityItem[] = [
-    {id: "1", examName: "Midterm: Advanced Physics", status: "Completed", scannedCount: 145, time: "10 mins ago"},
-    {id: "2", examName: "Quiz: Intro to Biology", status: "Processing", scannedCount: 82, time: "In progress"},
-    {id: "3", examName: "Final: World History", status: "Needs Review", scannedCount: 310, time: "2 hours ago"},
-    {id: "4", examName: "Midterm: Calculus I", status: "Completed", scannedCount: 205, time: "Yesterday"},
-]
 
 const containerVariants: Variants = {
     hidden: {opacity: 0},
@@ -53,7 +48,19 @@ export function DashboardPage() {
     const {user} = useAuth()
     const [summary, setSummary] = useState<DashboardSummary | null>(null)
     const [summaryError, setSummaryError] = useState<string | null>(null)
+    const [recentScans, setRecentScans] = useState<RecentScan[]>([])
     const canViewSummary = Boolean(user?.role && summaryRoles.has(user.role))
+
+    useEffect(() => {
+        const run = async () => {
+            try {
+                setRecentScans(await getRecentScans(8))
+            } catch {
+                setRecentScans([])
+            }
+        }
+        void run()
+    }, [])
 
     useEffect(() => {
         if (!canViewSummary) {
@@ -155,55 +162,59 @@ export function DashboardPage() {
                 <div
                     className="flex items-center justify-between border-b border-slate-200/60 bg-slate-50/50 px-6 py-5">
                     <h2 className="text-lg font-black text-slate-900">Recent Exam Processing</h2>
-                    <button className="cursor-pointer text-sm font-semibold text-cyan-600 hover:text-cyan-700">View
-                        All
-                    </button>
+                    <span className="text-xs font-semibold text-slate-400">live scan activity</span>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                         <thead
                             className="border-b border-slate-100 bg-white text-xs font-semibold uppercase text-slate-500">
                         <tr>
-                            <th className="rounded-tl-3xl px-6 py-4">Exam Name</th>
+                            <th className="rounded-tl-3xl px-6 py-4">Exam / Sheet</th>
                             <th className="px-6 py-4">Status</th>
-                            <th className="px-6 py-4">Scanned</th>
-                            <th className="px-6 py-4">Time</th>
-                            <th className="rounded-tr-3xl px-6 py-4 text-right">Action</th>
+                            <th className="px-6 py-4">Student No</th>
+                            <th className="px-6 py-4">Score</th>
+                            <th className="rounded-tr-3xl px-6 py-4 text-right">Time</th>
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                        {recentActivities.map((activity) => (
-                            <tr key={activity.id} className="group transition-colors hover:bg-slate-50/50">
-                                <td className="px-6 py-4 font-bold text-slate-900">{activity.examName}</td>
+                        {recentScans.length === 0 ? (
+                            <tr>
+                                <td colSpan={5} className="px-6 py-10 text-center text-sm font-medium text-slate-400">
+                                    No scan activity yet.
+                                </td>
+                            </tr>
+                        ) : recentScans.map((scan) => (
+                            <tr key={scan.id} className="group transition-colors hover:bg-slate-50/50">
+                                <td className="px-6 py-4">
+                                    <p className="font-bold text-slate-900">{scan.exam_title}</p>
+                                    <p className="max-w-[220px] truncate text-xs font-medium text-slate-500">{scan.original_filename}</p>
+                                </td>
                                 <td className="px-6 py-4">
                     <span
                         className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${
-                            activity.status === "Completed"
+                            scan.status === "completed"
                                 ? "border border-emerald-100 bg-emerald-50 text-emerald-700"
-                                : activity.status === "Processing"
+                                : scan.status === "processing" || scan.status === "queued"
                                     ? "border border-cyan-100 bg-cyan-50 text-cyan-700"
-                                    : "border border-amber-100 bg-amber-50 text-amber-700"
+                                    : "border border-rose-100 bg-rose-50 text-rose-700"
                         }`}
                     >
-                      {activity.status === "Completed" ? <CheckCircle2 className="h-3 w-3"/> : null}
-                        {activity.status === "Processing" ? (
+                      {scan.status === "completed" ? <CheckCircle2 className="h-3 w-3"/> : null}
+                        {scan.status === "processing" || scan.status === "queued" ? (
                             <motion.div animate={{rotate: 360}}
                                         transition={{repeat: Infinity, duration: 2, ease: "linear"}}>
                                 <ScanLine className="h-3 w-3"/>
                             </motion.div>
                         ) : null}
-                        {activity.status === "Needs Review" ? <AlertCircle className="h-3 w-3"/> : null}
-                        {activity.status}
+                        {scan.status === "failed" ? <AlertCircle className="h-3 w-3"/> : null}
+                        {scan.status}
                     </span>
                                 </td>
-                                <td className="px-6 py-4 font-medium text-slate-600">{activity.scannedCount} sheets</td>
-                                <td className="px-6 py-4 text-slate-500">{activity.time}</td>
-                                <td className="px-6 py-4 text-right">
-                                    <button
-                                        className="cursor-pointer rounded-md p-1 text-slate-400 transition-colors hover:bg-cyan-50 hover:text-cyan-600">
-                                        <MoreHorizontal className="h-5 w-5"/>
-                                    </button>
+                                <td className="px-6 py-4 font-mono font-medium text-slate-600">{scan.detected_student_no || "—"}</td>
+                                <td className="px-6 py-4 font-medium text-slate-600">
+                                    {scan.status === "completed" && scan.score != null ? `${scan.score}/${scan.max_score}` : "—"}
                                 </td>
+                                <td className="px-6 py-4 text-right text-slate-500">{formatRelative(scan.created_at)}</td>
                             </tr>
                         ))}
                         </tbody>

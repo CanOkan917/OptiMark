@@ -1,6 +1,38 @@
-from ..api_app import *  # noqa: F401,F403
+import json
+from typing import Any
 
-@app.get("/teachers", response_model=TeachersResponse)
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from ..application_services import (
+    can_manage_course,
+    ensure_academic_year_is_writable,
+    ensure_request_year_matches_selected,
+    get_teacher_map_for_courses,
+    parse_public_id,
+    resolve_teacher_user_ids,
+    serialize_course,
+    to_course_public_id,
+    to_teacher_public_id,
+    validate_academic_year,
+)
+from ..database import get_db
+from ..deps import get_current_user, require_roles
+from ..models import Course, CourseAuditLog, CourseTeacher, User
+from ..schemas import (
+    CourseCreate,
+    CourseOut,
+    CoursePatch,
+    CoursesResponse,
+    TeacherItem,
+    TeachersResponse,
+)
+
+router = APIRouter()
+
+@router.get("/teachers", response_model=TeachersResponse)
 def list_teachers(
     academic_year: str = Query(...),
     search: str | None = Query(default=None),
@@ -32,7 +64,7 @@ def list_teachers(
 
     return TeachersResponse(items=items)
 
-@app.post("/courses", response_model=CourseOut, status_code=status.HTTP_201_CREATED)
+@router.post("/courses", response_model=CourseOut, status_code=status.HTTP_201_CREATED)
 def create_course(
     payload: CourseCreate,
     current_user: User = Depends(require_roles("admin", "school_admin", "teacher")),
@@ -95,7 +127,7 @@ def create_course(
     teacher_ids = [to_teacher_public_id(teacher_id) for teacher_id in teacher_user_ids]
     return serialize_course(course, teacher_ids)
 
-@app.get("/courses", response_model=CoursesResponse)
+@router.get("/courses", response_model=CoursesResponse)
 def list_courses(
     academic_year: str = Query(...),
     search: str | None = Query(default=None),
@@ -123,7 +155,7 @@ def list_courses(
         items=[serialize_course(course, teacher_map.get(course.id, [])) for course in courses]
     )
 
-@app.get("/courses/{course_id}", response_model=CourseOut)
+@router.get("/courses/{course_id}", response_model=CourseOut)
 def get_course_detail(
     course_id: str,
     academic_year: str = Query(...),
@@ -144,7 +176,7 @@ def get_course_detail(
     teacher_map = get_teacher_map_for_courses(db, [course.id])
     return serialize_course(course, teacher_map.get(course.id, []))
 
-@app.patch("/courses/{course_id}", response_model=CourseOut)
+@router.patch("/courses/{course_id}", response_model=CourseOut)
 def update_course(
     course_id: str,
     payload: CoursePatch,
@@ -242,7 +274,7 @@ def update_course(
         [to_teacher_public_id(teacher_user_id) for teacher_user_id in next_teacher_user_ids],
     )
 
-@app.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_course(
     course_id: str,
     academic_year: str = Query(...),

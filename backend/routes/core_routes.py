@@ -1,10 +1,37 @@
-from ..api_app import *  # noqa: F401,F403
+from datetime import datetime, timezone
+import json
 
-@app.get("/health")
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from ..application_services import (
+    VALID_ROLES,
+    build_academic_year_options,
+    get_default_academic_year,
+)
+from ..database import get_db
+from ..deps import get_current_user, require_roles
+from ..models import User, UserPreference, UserPreferenceAuditLog
+from ..schemas import (
+    AcademicYearsResponse,
+    DashboardSummary,
+    TokenResponse,
+    UserCreate,
+    UserLogin,
+    UserOut,
+    UserPreferenceOut,
+    UserPreferenceUpdate,
+)
+from ..security import create_access_token, get_password_hash, verify_password
+
+router = APIRouter()
+
+@router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
 
-@app.post("/auth/login", response_model=TokenResponse)
+@router.post("/auth/login", response_model=TokenResponse)
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
     user = db.scalar(
         select(User).where(
@@ -23,15 +50,15 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
     token = create_access_token(user.username)
     return TokenResponse(access_token=token)
 
-@app.get("/auth/me", response_model=UserOut)
+@router.get("/auth/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
-@app.get("/academic-years", response_model=AcademicYearsResponse)
+@router.get("/academic-years", response_model=AcademicYearsResponse)
 def get_academic_years(_: User = Depends(get_current_user)) -> AcademicYearsResponse:
     return AcademicYearsResponse(items=build_academic_year_options())
 
-@app.get("/users/me/preferences", response_model=UserPreferenceOut)
+@router.get("/users/me/preferences", response_model=UserPreferenceOut)
 def get_my_preferences(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -49,7 +76,7 @@ def get_my_preferences(
 
     return UserPreferenceOut(selected_academic_year=preference.selected_academic_year)
 
-@app.put("/users/me/preferences", response_model=UserPreferenceOut)
+@router.put("/users/me/preferences", response_model=UserPreferenceOut)
 def update_my_preferences(
     payload: UserPreferenceUpdate,
     current_user: User = Depends(get_current_user),
@@ -89,7 +116,7 @@ def update_my_preferences(
 
     return UserPreferenceOut(selected_academic_year=preference.selected_academic_year)
 
-@app.post("/admin/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post("/admin/users", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def create_user_by_admin(
     payload: UserCreate,
     role: str = "teacher",
@@ -122,7 +149,7 @@ def create_user_by_admin(
     db.refresh(user)
     return user
 
-@app.get("/dashboard/summary", response_model=DashboardSummary)
+@router.get("/dashboard/summary", response_model=DashboardSummary)
 def dashboard_summary(
     _: User = Depends(require_roles("admin", "school_admin", "analyst")),
     db: Session = Depends(get_db),

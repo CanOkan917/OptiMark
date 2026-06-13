@@ -11,9 +11,11 @@ import {
     ScanLine,
     Search,
     Settings,
+    UserCog,
     Users,
     type LucideIcon
 } from "lucide-react"
+import type {UserRole} from "../types/auth"
 import {motion} from "framer-motion"
 import {useAuth} from "../auth/AuthContext"
 import {useAcademic} from "../academic/AcademicContext"
@@ -23,6 +25,7 @@ interface NavItem {
     label: string
     icon: LucideIcon
     to: string
+    roles?: UserRole[]
 }
 
 const navItems: NavItem[] = [
@@ -32,6 +35,7 @@ const navItems: NavItem[] = [
     {id: "exams", label: "Exam Management", icon: ClipboardList, to: "/dashboard/exams"},
     {id: "reports", label: "Reports", icon: FileText, to: "/dashboard/reports"},
     {id: "students", label: "Students", icon: Users, to: "/dashboard/students"},
+    {id: "staff", label: "Staff Management", icon: UserCog, to: "/dashboard/staff", roles: ["admin", "school_admin"]},
     {id: "settings", label: "Settings", icon: Settings, to: "/dashboard/settings"},
 ]
 
@@ -68,7 +72,9 @@ export function DashboardLayout() {
                 </div>
 
                 <nav className="flex-1 space-y-1.5 overflow-y-auto px-4 py-6">
-                    {navItems.map((item) => {
+                    {navItems
+                        .filter((item) => !item.roles || (user?.role && item.roles.includes(user.role)))
+                        .map((item) => {
                         const Icon = item.icon
                         return (
                             <NavLink key={item.id} to={item.to}>

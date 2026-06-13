@@ -39,6 +39,44 @@ class UserOut(BaseModel):
     last_login_at: datetime | None
 
 
+STAFF_ROLES = ("admin", "school_admin", "analyst", "teacher")
+
+
+class StaffCreate(BaseModel):
+    email: EmailStr
+    username: str = Field(min_length=3, max_length=64)
+    full_name: str | None = Field(default=None, max_length=120)
+    school_name: str | None = Field(default=None, max_length=160)
+    password: str = Field(min_length=8, max_length=128)
+    role: Literal["admin", "school_admin", "analyst", "teacher"] = "teacher"
+
+
+class StaffUpdate(BaseModel):
+    full_name: str | None = Field(default=None, max_length=120)
+    role: Literal["admin", "school_admin", "analyst", "teacher"] | None = None
+    is_active: bool | None = None
+
+
+class StaffListResponse(BaseModel):
+    items: list[UserOut]
+
+
+class RecentScanItem(BaseModel):
+    id: str
+    exam_id: str
+    exam_title: str
+    original_filename: str
+    status: Literal["queued", "processing", "completed", "failed"]
+    score: int | None
+    max_score: int | None
+    detected_student_no: str | None
+    created_at: datetime
+
+
+class RecentScansResponse(BaseModel):
+    items: list[RecentScanItem]
+
+
 class DashboardSummary(BaseModel):
     total_users: int
     active_users: int
@@ -189,6 +227,37 @@ class ExamSheetTemplateOut(BaseModel):
     download_url: str
 
 
+class ScanJobOut(BaseModel):
+    id: str
+    exam_id: str
+    original_filename: str
+    status: Literal["queued", "processing", "completed", "failed"]
+    progress: int
+    detected_student_no: str | None
+    matched_student_id: str | None
+    detected_markers: int | None
+    score: int | None
+    max_score: int | None
+    correct_count: int | None
+    wrong_count: int | None
+    blank_count: int | None
+    ambiguous_count: int | None
+    error_message: str | None
+    created_at: datetime
+    completed_at: datetime | None
+
+
+class ScanJobResultOut(BaseModel):
+    job: ScanJobOut
+    processing_mode: str | None
+    has_overlay: bool
+    result: dict
+
+
+class ScanJobsResponse(BaseModel):
+    items: list[ScanJobOut]
+
+
 class ExamOverviewMetricsOut(BaseModel):
     assigned_student_count: int
     submitted_answer_count: int
@@ -203,6 +272,39 @@ class ExamOverviewOut(BaseModel):
     exam: ExamOut
     sheet_templates: list[ExamSheetTemplateOut]
     metrics: ExamOverviewMetricsOut
+
+
+class ExamAnalyticsBucket(BaseModel):
+    label: str
+    count: int
+
+
+class ExamAnalyticsQuestionStat(BaseModel):
+    question_no: int
+    correct_option: str | None
+    correct: int
+    wrong: int
+    blank: int
+    ambiguous: int
+    answered: int
+    correct_rate: float
+
+
+class ExamAnalyticsOut(BaseModel):
+    total_scans: int
+    completed_scans: int
+    failed_scans: int
+    pending_scans: int
+    matched_students: int
+    unmatched_scans: int
+    max_score: int | None
+    average_score: float | None
+    median_score: float | None
+    highest_score: int | None
+    lowest_score: int | None
+    pass_rate: float | None
+    score_distribution: list[ExamAnalyticsBucket]
+    question_stats: list[ExamAnalyticsQuestionStat]
 
 
 class ExamBuilderOptionPayload(BaseModel):
